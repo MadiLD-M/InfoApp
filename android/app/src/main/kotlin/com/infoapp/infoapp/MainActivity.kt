@@ -18,6 +18,7 @@ class MainActivity : FlutterActivity() {
     private val channelName = "infoapp/app_launcher"
     private val preferencesName = "infoapp_modules"
     private val selectedAppsKey = "selected_apps"
+    private val descriptionPrefix = "description_"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -29,10 +30,23 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "getInstalledApps" -> result.success(getInstalledApps())
                 "getSavedApps" -> result.success(getSavedApps())
+                "getAppDescriptions" -> result.success(getAppDescriptions())
                 "saveApps" -> {
                     val packages = call.arguments as? List<*>
                     saveApps(packages.orEmpty().filterIsInstance<String>())
                     result.success(null)
+                }
+                "saveAppDescription" -> {
+                    val arguments = call.arguments as? Map<*, *>
+                    val packageName = arguments?.get("packageName") as? String
+                    val description = arguments?.get("description") as? String
+
+                    if (packageName == null || description == null) {
+                        result.error("invalid_arguments", "Datos de descripcion invalidos.", null)
+                    } else {
+                        saveAppDescription(packageName, description)
+                        result.success(null)
+                    }
                 }
                 "launchApp" -> {
                     val packageName = call.arguments as? String
@@ -84,6 +98,28 @@ class MainActivity : FlutterActivity() {
             .edit()
             .putStringSet(selectedAppsKey, packageNames.toSet())
             .apply()
+    }
+
+    private fun getAppDescriptions(): Map<String, String> {
+        val preferences = getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+        return preferences.all
+            .filterKeys { it.startsWith(descriptionPrefix) }
+            .mapKeys { it.key.removePrefix(descriptionPrefix) }
+            .mapValues { it.value as? String ?: "" }
+            .filterValues { it.isNotBlank() }
+    }
+
+    private fun saveAppDescription(packageName: String, description: String) {
+        val editor = getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit()
+        val key = "$descriptionPrefix$packageName"
+
+        if (description.isBlank()) {
+            editor.remove(key)
+        } else {
+            editor.putString(key, description.trim())
+        }
+
+        editor.apply()
     }
 
     private fun launchApp(packageName: String): Boolean {

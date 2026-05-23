@@ -15,6 +15,8 @@ void main() {
             case 'getInstalledApps':
             case 'getSavedApps':
               return <String>[];
+            case 'getAppDescriptions':
+              return <String, String>{};
             default:
               return null;
           }

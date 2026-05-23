@@ -86,8 +86,22 @@ class AppLauncherService {
     return packages ?? const <String>[];
   }
 
+  Future<Map<String, String>> getAppDescriptions() async {
+    final descriptions = await _channel.invokeMapMethod<String, String>(
+      'getAppDescriptions',
+    );
+    return descriptions ?? const <String, String>{};
+  }
+
   Future<void> saveApps(List<String> packageNames) {
     return _channel.invokeMethod<void>('saveApps', packageNames);
+  }
+
+  Future<void> saveAppDescription(String packageName, String description) {
+    return _channel.invokeMethod<void>('saveAppDescription', {
+      'packageName': packageName,
+      'description': description,
+    });
   }
 
   Future<bool> launchApp(String packageName) async {
@@ -107,6 +121,7 @@ class _ModulesHomePageState extends State<ModulesHomePage> {
   final _service = AppLauncherService();
   List<InstalledApp> _installedApps = const [];
   List<String> _selectedPackages = const [];
+  Map<String, String> _descriptions = const {};
   bool _isLoading = true;
   String? _error;
 
@@ -133,10 +148,12 @@ class _ModulesHomePageState extends State<ModulesHomePage> {
       final results = await Future.wait([
         _service.getInstalledApps(),
         _service.getSavedApps(),
+        _service.getAppDescriptions(),
       ]);
 
       final installed = results[0] as List<InstalledApp>;
       final saved = (results[1] as List<String>).toSet();
+      final descriptions = results[2] as Map<String, String>;
       final availablePackages = installed.map((app) => app.packageName).toSet();
 
       if (!mounted) {
@@ -147,6 +164,7 @@ class _ModulesHomePageState extends State<ModulesHomePage> {
         _selectedPackages = saved
             .where(availablePackages.contains)
             .toList(growable: false);
+        _descriptions = Map.unmodifiable(descriptions);
         _isLoading = false;
       });
     } on PlatformException catch (exception) {
@@ -166,6 +184,88 @@ class _ModulesHomePageState extends State<ModulesHomePage> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _removeModule(InstalledApp app) async {
+    final updated = _selectedPackages
+        .where((packageName) => packageName != app.packageName)
+        .toList(growable: false);
+
+    await Future.wait([
+      _service.saveApps(updated),
+      _service.saveAppDescription(app.packageName, ''),
+    ]);
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _selectedPackages = updated;
+      _descriptions = Map.unmodifiable(
+        Map<String, String>.from(_descriptions)..remove(app.packageName),
+      );
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('${app.name} se elimino del menu.')));
+  }
+
+  Future<void> _editDescription(InstalledApp app) async {
+    final controller = TextEditingController(
+      text: _descriptions[app.packageName] ?? '',
+    );
+
+    final description = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(app.name),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 4,
+            maxLength: 140,
+            decoration: const InputDecoration(
+              labelText: 'Descripcion',
+              hintText: 'Ej. Ventas, inventario, reportes...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (description == null) {
+      return;
+    }
+
+    await _service.saveAppDescription(app.packageName, description);
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      final updated = Map<String, String>.from(_descriptions);
+      if (description.isEmpty) {
+        updated.remove(app.packageName);
+      } else {
+        updated[app.packageName] = description;
+      }
+      _descriptions = Map.unmodifiable(updated);
+    });
   }
 
   Future<void> _openModule(InstalledApp app) async {
@@ -275,7 +375,7 @@ class _ModulesHomePageState extends State<ModulesHomePage> {
                     gridDelegate:
                         const SliverGridDelegateWithMaxCrossAxisExtent(
                           maxCrossAxisExtent: 180,
-                          mainAxisExtent: 168,
+                          mainAxisExtent: 198,
                           crossAxisSpacing: 14,
                           mainAxisSpacing: 14,
                         ),
@@ -286,7 +386,10 @@ class _ModulesHomePageState extends State<ModulesHomePage> {
                         color: index.isEven
                             ? colorScheme.primary
                             : colorScheme.secondary,
+                        description: _descriptions[app.packageName],
                         onTap: () => _openModule(app),
+                        onEditDescription: () => _editDescription(app),
+                        onDelete: () => _removeModule(app),
                       );
                     },
                   ),
@@ -355,57 +458,173 @@ class HeaderPanel extends StatelessWidget {
   }
 }
 
-class ModuleTile extends StatelessWidget {
+class ModuleTile extends StatefulWidget {
   const ModuleTile({
     super.key,
     required this.app,
     required this.color,
+    required this.description,
     required this.onTap,
+    required this.onEditDescription,
+    required this.onDelete,
   });
 
   final InstalledApp app;
   final Color color;
+  final String? description;
   final VoidCallback onTap;
+  final VoidCallback onEditDescription;
+  final VoidCallback onDelete;
+
+  @override
+  State<ModuleTile> createState() => _ModuleTileState();
+}
+
+class _ModuleTileState extends State<ModuleTile> {
+  static const _actionWidth = 104.0;
+  double _slideOffset = 0;
+
+  bool get _isOpen => _slideOffset < -_actionWidth / 2;
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    setState(() {
+      _slideOffset = (_slideOffset + details.delta.dx).clamp(-_actionWidth, 0);
+    });
+  }
+
+  void _handleDragEnd(DragEndDetails details) {
+    setState(() {
+      _slideOffset = _isOpen ? -_actionWidth : 0;
+    });
+  }
+
+  void _close() {
+    setState(() => _slideOffset = 0);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
+    final description = widget.description?.trim();
+
+    return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE0EBEC)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppIcon(app: app, size: 56, fallbackColor: color),
-              const Spacer(),
-              Text(
-                app.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: const Color(0xFF173236),
-                  fontWeight: FontWeight.w800,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7FAFA),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE0EBEC)),
+              ),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: _actionWidth,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      IconButton.filledTonal(
+                        tooltip: 'Editar descripcion',
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFF5DA),
+                          foregroundColor: const Color(0xFF7B5200),
+                        ),
+                        icon: const Icon(Icons.edit_note_rounded),
+                        onPressed: () {
+                          _close();
+                          widget.onEditDescription();
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      IconButton.filledTonal(
+                        tooltip: 'Eliminar del menu',
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFE8E6),
+                          foregroundColor: const Color(0xFFB42318),
+                        ),
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        onPressed: () {
+                          _close();
+                          widget.onDelete();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                'Abrir modulo',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w700,
+            ),
+          ),
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            left: _slideOffset,
+            right: -_slideOffset,
+            top: 0,
+            bottom: 0,
+            child: GestureDetector(
+              onHorizontalDragUpdate: _handleDragUpdate,
+              onHorizontalDragEnd: _handleDragEnd,
+              child: Material(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: _isOpen ? _close : widget.onTap,
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE0EBEC)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppIcon(
+                          app: widget.app,
+                          size: 52,
+                          fallbackColor: widget.color,
+                        ),
+                        const Spacer(),
+                        Text(
+                          widget.app.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: const Color(0xFF173236),
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          description == null || description.isEmpty
+                              ? 'Abrir modulo'
+                              : description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
+                                color:
+                                    description == null || description.isEmpty
+                                    ? widget.color
+                                    : const Color(0xFF526B70),
+                                fontWeight:
+                                    description == null || description.isEmpty
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
