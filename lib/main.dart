@@ -308,15 +308,31 @@ class _ModulesHomePageState extends State<ModulesHomePage> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
+    final bool manyModules = _modules.length >= 5;
+
     return Scaffold(
       appBar: AppBar(
         leading: Padding(
           padding: const EdgeInsets.only(left: 8),
-          child: IconButton.filledTonal(
-            tooltip: 'Agregar modulo',
-            icon: const Icon(Icons.add_rounded),
-            onPressed: _isLoading ? null : _showAppPicker,
-          ),
+          child: manyModules
+              ? Opacity(
+                  opacity: 0.20,
+                  child: IconButton(
+                    tooltip: 'Agregar modulo',
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    style: IconButton.styleFrom(
+                      foregroundColor: const Color(0xFF888888),
+                      minimumSize: const Size(32, 32),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: _isLoading ? null : _showAppPicker,
+                  ),
+                )
+              : IconButton.filledTonal(
+                  tooltip: 'Agregar modulo',
+                  icon: const Icon(Icons.add_rounded),
+                  onPressed: _isLoading ? null : _showAppPicker,
+                ),
         ),
         title: const Text('InfoApp'),
         actions: [
@@ -411,49 +427,64 @@ class HeaderPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE3EEEE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'ERP modular',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: const Color(0xFF173236),
-              fontWeight: FontWeight.w800,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.asset(
+            'InfoAPP.png',
+            height: 100, // Altura del banner
+            fit: BoxFit.cover, // Asegurar que cubra bien si es un banner
+            alignment: Alignment.center,
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Centraliza accesos a los modulos de trabajo de la empresa.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF526B70)),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE3EEEE)),
           ),
-          const SizedBox(height: 18),
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.apps_rounded, color: colorScheme.tertiary),
-              const SizedBox(width: 8),
               Text(
-                moduleCount == 1
-                    ? '1 modulo activo'
-                    : '$moduleCount modulos activos',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.w700,
+                'InfoAPP',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: const Color(0xFF173236),
+                  fontWeight: FontWeight.w800,
                 ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Ofrece una solución ERP que ayuda a las empresas a gestionar de forma más ordenada y eficiente sus procesos de calidad, mantenimiento, permisos de trabajo, competencias y certificaciones laborales.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF526B70)),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Icon(Icons.apps_rounded, color: colorScheme.tertiary),
+                  const SizedBox(width: 8),
+                  Text(
+                    moduleCount == 1
+                        ? '1 modulo activo'
+                        : '$moduleCount modulos activos',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -481,7 +512,7 @@ class ModuleTile extends StatefulWidget {
 }
 
 class _ModuleTileState extends State<ModuleTile> {
-  static const _actionWidth = 104.0;
+  static const _actionWidth = 112.0;
   double _slideOffset = 0;
 
   bool get _isOpen => _slideOffset < -_actionWidth / 2;
